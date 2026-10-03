@@ -1,121 +1,146 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+import { useEffect, useRef, useState } from 'react'
+import { supabase } from './supabaseClient'
 import './App.css'
 
-function App() {
-  const [count, setCount] = useState(0)
+const TAP_COOLDOWN_MS = 5000
+const BUCKET_MS = 30_000 // 30s buckets for the spike timeline
+
+function bucketize(taps, sessionStart) {
+  const buckets = []
+  const now = Date.now()
+  const count = Math.max(1, Math.ceil((now - sessionStart) / BUCKET_MS))
+  for (let i = 0; i < count; i++) buckets.push(0)
+  for (const t of taps) {
+    const i = Math.floor((t - sessionStart) / BUCKET_MS)
+    if (i >= 0 && i < buckets.length) buckets[i]++
+  }
+  return buckets
+}
+
+function StudentView({ onBack }) {
+  const [cooldown, setCooldown] = useState(0)
+  const timerRef = useRef(null)
+
+  useEffect(() => () => clearInterval(timerRef.current), [])
+
+  async function tap() {
+    if (cooldown > 0) return
+    await supabase.from('taps').insert({})
+    setCooldown(TAP_COOLDOWN_MS / 1000)
+    timerRef.current = setInterval(() => {
+      setCooldown((c) => {
+        if (c <= 1) {
+          clearInterval(timerRef.current)
+          return 0
+        }
+        return c - 1
+      })
+    }, 1000)
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <section className="view student-view">
+      <button type="button" className="link-back" onClick={onBack}>
+        ← back
+      </button>
+      <h1>TuneIn</h1>
+      <p className="hint">Lost in the lecture? Tap. It's anonymous.</p>
+      <button
+        type="button"
+        className={`tap-button ${cooldown > 0 ? 'sent' : ''}`}
+        onClick={tap}
+        disabled={cooldown > 0}
+      >
+        {cooldown > 0 ? `Sent ✓ (${cooldown}s)` : "I'm lost"}
+      </button>
+    </section>
+  )
+}
 
-      <div className="ticks"></div>
+function ProfessorView({ onBack }) {
+  const [taps, setTaps] = useState([])
+  const sessionStart = useRef(Date.now()).current
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+  useEffect(() => {
+    supabase
+      .from('taps')
+      .select('created_at')
+      .gte('created_at', new Date(sessionStart).toISOString())
+      .then(({ data }) => setTaps((data ?? []).map((r) => Date.parse(r.created_at))))
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+    const channel = supabase
+      .channel('taps-changes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'taps' }, (payload) => {
+        setTaps((prev) => [...prev, Date.parse(payload.new.created_at)])
+      })
+      .subscribe()
+
+    return () => supabase.removeChannel(channel)
+  }, [sessionStart])
+
+  async function reset() {
+    await supabase.from('taps').delete().gte('created_at', new Date(sessionStart).toISOString())
+    setTaps([])
+  }
+
+  const recentCount = taps.filter((t) => Date.now() - t < 15_000).length
+  const buckets = bucketize(taps, sessionStart)
+  const max = Math.max(1, ...buckets)
+  const peakIndex = buckets.indexOf(max)
+
+  return (
+    <section className="view professor-view">
+      <button type="button" className="link-back" onClick={onBack}>
+        ← back
+      </button>
+      <h1>Live confusion</h1>
+      <div className={`live-count ${recentCount > 0 ? 'hot' : ''}`}>
+        {recentCount}
+        <span>lost in the last 15s</span>
+      </div>
+
+      <h2>Timeline this session</h2>
+      <div className="timeline">
+        {buckets.map((v, i) => (
+          <div
+            key={i}
+            className={`bar ${i === peakIndex && max > 0 ? 'peak' : ''}`}
+            style={{ height: `${(v / max) * 100}%` }}
+            title={`${v} taps`}
+          />
+        ))}
+      </div>
+      {max > 0 && (
+        <p className="hint">
+          Biggest spike: {max} taps around{' '}
+          {Math.round((peakIndex * BUCKET_MS) / 60_000)} min in.
+        </p>
+      )}
+
+      <button type="button" className="reset-button" onClick={reset}>
+        Reset session
+      </button>
+    </section>
+  )
+}
+
+function App() {
+  const [view, setView] = useState('select')
+
+  if (view === 'student') return <StudentView onBack={() => setView('select')} />
+  if (view === 'professor') return <ProfessorView onBack={() => setView('select')} />
+
+  return (
+    <section className="view select-view">
+      <h1>TuneIn</h1>
+      <p className="hint">Know when your class tunes out.</p>
+      <button type="button" className="choice-button" onClick={() => setView('student')}>
+        I'm a student
+      </button>
+      <button type="button" className="choice-button" onClick={() => setView('professor')}>
+        I'm the professor
+      </button>
+    </section>
   )
 }
 
