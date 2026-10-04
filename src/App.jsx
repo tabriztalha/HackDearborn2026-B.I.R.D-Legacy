@@ -43,16 +43,21 @@ function StudentView({ onBack }) {
       <button type="button" className="link-back" onClick={onBack}>
         ← back
       </button>
-      <h1>TuneIn</h1>
+      <div className="brand">
+        <span className="brand-badge">🎧</span>
+        <h1>TuneIn</h1>
+      </div>
       <p className="hint">Lost in the lecture? Tap. It's anonymous.</p>
-      <button
-        type="button"
-        className={`tap-button ${cooldown > 0 ? 'sent' : ''}`}
-        onClick={tap}
-        disabled={cooldown > 0}
-      >
-        {cooldown > 0 ? `Sent ✓ (${cooldown}s)` : "I'm lost"}
-      </button>
+      <div className={`tap-ring ${cooldown > 0 ? 'sent' : ''}`}>
+        <button
+          type="button"
+          className={`tap-button ${cooldown > 0 ? 'sent' : ''}`}
+          onClick={tap}
+          disabled={cooldown > 0}
+        >
+          {cooldown > 0 ? `Sent ✓ ${cooldown}s` : "I'm lost"}
+        </button>
+      </div>
     </section>
   )
 }
@@ -93,29 +98,40 @@ function ProfessorView({ onBack }) {
       <button type="button" className="link-back" onClick={onBack}>
         ← back
       </button>
-      <h1>Live confusion</h1>
-      <div className={`live-count ${recentCount > 0 ? 'hot' : ''}`}>
-        {recentCount}
-        <span>lost in the last 15s</span>
+      <div className="brand">
+        <span className="brand-badge">📡</span>
+        <h1>Live confusion</h1>
       </div>
 
-      <h2>Timeline this session</h2>
-      <div className="timeline">
-        {buckets.map((v, i) => (
-          <div
-            key={i}
-            className={`bar ${i === peakIndex && max > 0 ? 'peak' : ''}`}
-            style={{ height: `${(v / max) * 100}%` }}
-            title={`${v} taps`}
-          />
-        ))}
+      <div className={`card stat-card ${recentCount > 0 ? 'hot' : ''}`}>
+        <div className="live-count">{recentCount}</div>
+        <span className="stat-label">lost in the last 15s</span>
       </div>
-      {max > 0 && (
-        <p className="hint">
-          Biggest spike: {max} taps around{' '}
-          {Math.round((peakIndex * BUCKET_MS) / 60_000)} min in.
-        </p>
-      )}
+
+      <div className="card timeline-card">
+        <div className="card-header">
+          <h2>Timeline this session</h2>
+          {max > 0 && (
+            <span className="pill">
+              peak {max} @ {Math.round((peakIndex * BUCKET_MS) / 60_000)}m
+            </span>
+          )}
+        </div>
+        <div className="timeline">
+          {buckets.map((v, i) => (
+            <div
+              key={i}
+              className={`bar ${i === peakIndex && max > 0 ? 'peak' : ''}`}
+              style={{ height: `${Math.max(4, (v / max) * 100)}%` }}
+              title={`${v} taps`}
+            />
+          ))}
+        </div>
+        <div className="timeline-axis">
+          <span>session start</span>
+          <span>now</span>
+        </div>
+      </div>
 
       <button type="button" className="reset-button" onClick={reset}>
         Reset session
@@ -132,14 +148,27 @@ function App() {
 
   return (
     <section className="view select-view">
-      <h1>TuneIn</h1>
+      <div className="brand">
+        <span className="brand-badge">🎧</span>
+        <h1>TuneIn</h1>
+      </div>
       <p className="hint">Know when your class tunes out.</p>
-      <button type="button" className="choice-button" onClick={() => setView('student')}>
-        I'm a student
-      </button>
-      <button type="button" className="choice-button" onClick={() => setView('professor')}>
-        I'm the professor
-      </button>
+      <div className="choices">
+        <button type="button" className="choice-button" onClick={() => setView('student')}>
+          <span className="choice-icon">🙋</span>
+          <span className="choice-text">
+            <strong>I'm a student</strong>
+            <small>Tap when you're lost</small>
+          </span>
+        </button>
+        <button type="button" className="choice-button" onClick={() => setView('professor')}>
+          <span className="choice-icon">📊</span>
+          <span className="choice-text">
+            <strong>I'm the professor</strong>
+            <small>Watch it live</small>
+          </span>
+        </button>
+      </div>
     </section>
   )
 }
