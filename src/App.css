@@ -255,6 +255,16 @@ h2 {
   color: var(--muted);
 }
 
+.stat-total {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-top: 0.5rem;
+}
+
+.error {
+  color: var(--alert);
+}
+
 .timeline-card {
   display: flex;
   flex-direction: column;
